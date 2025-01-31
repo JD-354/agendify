@@ -17,6 +17,8 @@ interface EventsProps {
 const Events: React.FC<EventsProps> = ({ onEditEvent,  refreshEvents }) => {
   const [events, setEvents] = useState<IEvent[]>([]);
   const [token, setToken] = useState("");
+  const [filterDate, setFilterDate] = useState("");
+  const [filterLocation, setFilterLocation] = useState("");
 
   const getEvents = useCallback(async () => {
     if (!token) {
@@ -60,15 +62,39 @@ const Events: React.FC<EventsProps> = ({ onEditEvent,  refreshEvents }) => {
     }
   }, [token, getEvents,refreshEvents]);
 
+  const filteredEvents = events.filter((event) => {
+    const eventDate = new Date(event.fecha).toISOString().split("T")[0];
+    const matchesDate = filterDate ? eventDate === filterDate : true;
+    const matchesLocation = filterLocation
+      ? event.ubicacion.toLowerCase().includes(filterLocation.toLowerCase())
+      : true;
+    return matchesDate && matchesLocation;
+  });
+
   return (
     <div className="bg-white">
       <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 sm:py-24 lg:max-w-7xl lg:px-1">
         <h2 className="text-2xl font-bold tracking-tight text-gray-900">
           Eventos
         </h2>
+        <div className="mt-2 grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 xl:gap-x-8">
+          <input
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            className="mr-7 p-1 border rounded"
+          />
+          <input
+            type="text"
+            placeholder="Filtrar por ubicación"
+            value={filterLocation}
+            onChange={(e) => setFilterLocation(e.target.value)}
+            className="p-1 border rounded"
+          />
+        </div>
 
         <div className="mt-2 grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 xl:gap-x-8">
-          {events.map((event) => (
+          {filteredEvents.map((event) => (
             <div key={event._id} className="group relative">
               <div className="mt-6 flex justify-between">
                 <div>
