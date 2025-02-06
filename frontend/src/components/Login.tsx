@@ -62,9 +62,9 @@ const Login:React.FC<LoginProps> =({toggleToRegister})=>{
        <>
       <div className="flex min-h-full flex-1 flex-col justify-center px-6 py-11 lg:px-8">
         <div className="sm:mx-auto sm:w-full sm:max-w-sm">
-          <img
-            alt="Your Company"
-            src="https://firebasestorage.googleapis.com/v0/b/adpowereat.appspot.com/o/libros%2Flogo.png?alt=media&token=2ea22b6c-fb23-43bc-aa7a-234890b21aa5"
+        <img
+            alt=""
+            src="/logo.jpeg"
             className="mx-auto h-12 w-auto"
           />
           <h2 className="mt-1 text-center text-2xl/9 font-bold tracking-tight text-gray-900">

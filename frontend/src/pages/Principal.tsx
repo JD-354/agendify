@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Events from "../components/Events";
@@ -15,59 +15,11 @@ interface IEvent {
 
 const ciudades = ["Bugalagrande", "Tulua", "Cali"];
 
-const barriosPorCiudad: Record<string, string[]> = {
-  Bugalagrande: [
-    "Centro",
-    "La Maria",
-    "Pablo XI",
-    "Maria etapa 2",
-    "El jardin",
-    "San Luis",
-    "Prados de San Bernabeht",
-    "Obrero"],
-  Tulua: [
-  "Alameda", 
-  "Centro", 
-  "La Rivera", 
-  "Santa Anita", 
-  "El Carmen", 
-  "San Rafael", 
-  "El Poblado", 
-  "Los Guaduales", 
-  "San Fernando", 
-  "El Jardín", 
-  "Las Américas", 
-  "San Vicente", 
-  "El Recuerdo", ],
-
-  Cali: [
-
-  "Centro", 
-  "San Fernando", 
-  "El Peñón", 
-  "Granada", 
-  "San Antonio", 
-  "El Vallado", 
-  "Ciudad Jardín", 
-  "Santa Mónica", 
-  "El Ingenio", 
-  "Los Cristales", 
-  "San Bosco", 
-  "El Guabal", 
-  "Los Chorros", 
-  "San Cayetano", 
-  "El Lido", 
-  "Los Lagos",],
-};
-
 const Principal: React.FC = () => {
   const [token, setToken] = useState("");
-  const [ubicacion, setUbicacion] = useState("");
   const [ciudad, setCiudad] = useState("");
-  const [barrio, setBarrio] = useState("");
   const [direccion, setDireccion] = useState("");
   const [editingEvent, setEditingEvent] = useState<IEvent | null>(null);
-  const navigate = useNavigate();
   const [dataForm, setDataForm] = useState({
     nameEvent: "",
     fecha: "",
@@ -75,25 +27,24 @@ const Principal: React.FC = () => {
     ubicacion: "",
     descripcion: "",
   });
-  
-  
-  const refreshEvents = () => {
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showFilter, setShowFilter] = useState(false);
+  const [events, setEvents] = useState<IEvent[]>([]);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+
+  const backgrounds = [
+    'url("/logo.jpeg")',
+    'url("https://images.unsplash.com/photo-1461862625640-1ccbb4b00c6f")',
+    'url("https://images.unsplash.com/photo-1556740749-887f6717d7e4")',
+    'url("https://images.unsplash.com/photo-1518389457349-5b6b5a416d9e")',
+  ];
+
+  const changeBackground = () => {
+    const randomIndex = Math.floor(Math.random() * backgrounds.length);
+    document.body.style.backgroundImage = backgrounds[randomIndex];
   };
-
-  useEffect(() => {
-    setUbicacion(
-      `${ciudad}${ciudad && barrio ? ", " : ""}${barrio}${
-        (ciudad || barrio) && direccion ? ", " : ""
-      }${direccion}`
-    );
-  }, [ciudad, barrio, direccion]);
-
-  useEffect(() => {
-    setDataForm((prev) => ({
-      ...prev,
-      ubicacion,
-    }));
-  }, [ubicacion]);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -104,247 +55,286 @@ const Principal: React.FC = () => {
     }
   }, [navigate]);
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setDataForm((prev) => ({ ...prev, [name]: value }));
+  useEffect(() => {
+    const intervalId = setInterval(changeBackground, 60000);
+    changeBackground();
+    return () => clearInterval(intervalId);
+  }, []);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        setShowEventForm(false);
+        setShowFilter(false);
+      }
+    };
+    if (showEventForm || showFilter) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showEventForm, showFilter]);
+
+  useEffect(() => {
+    if (ciudad || direccion) {
+      const ubicacionString = [ciudad, direccion].filter(Boolean).join(", ");
+      setDataForm(prev => ({ ...prev, ubicacion: ubicacionString }));
+    }
+  }, [ciudad, direccion]);
+
+  const fetchEvents = async () => {
+    try {
+      const response = await axios.get("https://gestioneventos-xv8m.onrender.com/api/events");
+      setEvents(response.data);
+    } catch (error) {
+      console.error("Error al cargar los eventos:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchEvents();
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
     if (name === "ciudad") {
       setCiudad(value);
-      setBarrio("");
-    } else if (name === "barrio") {
-      setBarrio(value);
     } else if (name === "direccion") {
       setDireccion(value);
+    } else {
+      setDataForm(prev => ({ ...prev, [name]: value }));
     }
-    setUbicacion(`${ciudad}, ${barrio}, ${direccion}`);
+    if (name === "fecha") {
+      setDataForm(prev => ({ ...prev, fecha: value }));
+    }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const resetForm = () => {
+    setDataForm({
+      nameEvent: "",
+      fecha: "",
+      hora: "",
+      ubicacion: "",
+      descripcion: "",
+    });
+    setCiudad("");
+    setDireccion("");
+    setShowEventForm(false);
+    setEditingEvent(null);
+  };
+
+  const handleSubmit = async (e: React.FormEvent | Event) => {
     e.preventDefault();
-
-    if (
-      !dataForm.nameEvent ||
-      !dataForm.fecha ||
-      !dataForm.hora ||
-      !dataForm.ubicacion ||
-      !dataForm.descripcion
-    ) {
-      alert("Por favor, complete todos los campos.");
-      return;
+    if (!dataForm.nameEvent || !dataForm.fecha || !dataForm.hora || !dataForm.ubicacion || !dataForm.descripcion) {
+      return;  // Si no hay datos completos, no hacemos nada.
     }
-
     try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      };
+      const dataToSend = { ...dataForm, fecha: new Date(dataForm.fecha).toISOString() };
       if (editingEvent) {
-        const response = await axios.put(
-          `https://gestioneventos-xv8m.onrender.com/api/event/${editingEvent._id}`,
-          dataForm,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-        alert(response.data.msg);
-        setEditingEvent(null);
+        await axios.put(`https://gestioneventos-xv8m.onrender.com/api/event/${editingEvent._id}`, dataToSend, config);
       } else {
-        const response = await axios.post("https://gestioneventos-xv8m.onrender.com/api/event", dataForm, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        alert(response.data.msg);
-        refreshEvents();
+        const response = await axios.post("https://gestioneventos-xv8m.onrender.com/api/event", dataToSend, config);
+        // Actualizar la lista de eventos añadiendo el nuevo evento
+        setEvents(prevEvents => [...prevEvents, response.data]);
       }
-      setDataForm({
-        nameEvent: "",
-        fecha: "",
-        hora: "",
-        ubicacion: "",
-        descripcion: "",
-      });
-      setCiudad("");
-      setBarrio("");
-      setDireccion("");
+      resetForm(); // Restablecer los campos del formulario después de crear la cita
     } catch (error) {
       console.error("Error al enviar el formulario:", error);
-      alert("Ocurrió un error inesperado.");
     }
   };
 
-  const handleEditEvent = (event: IEvent) => {
-    setEditingEvent(event);
-
-    
-    const [ciudad, barrio, direccion] = event.ubicacion.split(", ");
-    setCiudad(ciudad || "");
-    setBarrio(barrio || "");
-    setDireccion(direccion || "");
-
-    const fechaFormateada = new Date(event.fecha).toISOString().split("T")[0];
-
+  const handleCreateEvent = () => {
+    // Resetear el formulario a valores vacíos
     setDataForm({
-      nameEvent: event.nameEvent,
-      fecha: fechaFormateada,
-      hora: event.hora,
-      ubicacion: event.ubicacion,
-      descripcion: event.descripcion,
+      nameEvent: "",
+      fecha: "",
+      hora: "",
+      ubicacion: "",
+      descripcion: "",
     });
+    setCiudad("");
+    setDireccion("");
+    setShowEventForm(true); // Mostrar la tarjeta del formulario
   };
+
+  // ... (rest of the component remains the same)
 
   return (
     <div className="flex min-h-full flex-1 flex-col justify-center px-6 py-5 lg:px-8">
-      <div className="mt-2 sm:mx-auto sm:w-full sm:max-w-sm">
-        <form className="space-y-6" onSubmit={handleSubmit}>
-          <div className="sm:mx-auto sm:w-full sm:max-w-sm">
-            <div className="border-b border-gray-900/10 pb-8">
-              <h2 className="mt-2 text-center text-2xl/9 font-bold tracking-tight text-gray-900">
-                {editingEvent ? "Editar Evento" : "Registro"}
-              </h2>
+      <div className="flex gap-4">
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Buscar eventos..."
+          className="rounded-md border-gray-300 p-2"
+        />
+        <button
+          onClick={handleCreateEvent}
+          className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline-indigo-600"
+        >
+          Añadir evento
+        </button>
+        <button
+          onClick={() => setShowFilter(!showFilter)}
+          className="rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500"
+        >
+          Filtrar
+        </button>
+      </div>
+      {showFilter && (
+        <div className="fixed inset-0 z-10 flex items-center justify-center">
+          <div ref={modalRef} className="bg-gray-50 p-8 rounded-xl shadow-lg w-[350px]">
+            <h3 className="text-center text-xl font-semibold">Filtros</h3>
+            <div>
+              <label>Fecha</label>
+              <input
+                type="date"
+                className="block w-full mt-2 mb-4"
+                onChange={(e) => setDataForm(prev => ({ ...prev, fecha: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label>Ciudad</label>
+              <select
+                value={ciudad}
+                onChange={handleChange}
+                name="ciudad"
+                className="block w-full mt-2 mb-4"
+              >
+                <option value="">Seleccione una ciudad</option>
+                {ciudades.map((ciudad) => (
+                  <option key={ciudad} value={ciudad}>
+                    {ciudad}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
 
-              <div className="mt-5 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-6">
-                <div className="sm:col-span-3">
-                  <label htmlFor="nameEvent" className="block text-sm font-medium text-gray-900">
-                    Nombre del evento
+      {showEventForm && (
+        <div className="fixed inset-0 z-10 flex items-center justify-center">
+          <div ref={modalRef} className="bg-gray-50 p-8 rounded-xl shadow-lg w-[450px]">
+            <form className="space-y-3" onSubmit={handleSubmit}>
+              <h2 className="text-center text-xl font-bold tracking-tight text-gray-900 mb-4">
+                {editingEvent ? "Editar cita médica " : "Registrar cita médica"}
+              </h2>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label htmlFor="nameEvent" className="block text-sm font-medium text-gray-700">
+                    Nombre del Hospital
                   </label>
-                  <div className="mt-2">
-                    <input
-                      required
-                      value={dataForm.nameEvent}
-                      onChange={handleChange}
-                      id="nameEvent"
-                      name="nameEvent"
-                      type="text"
-                      className="block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline-indigo-600 sm:text-sm"
-                    />
-                  </div>
+                  <input
+                    id="nameEvent"
+                    name="nameEvent"
+                    type="text"
+                    value={dataForm.nameEvent}
+                    onChange={handleChange}
+                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
+                  />
                 </div>
-                <div className="sm:col-span-3">
-                  <label htmlFor="ciudad" className="block text-sm font-medium text-gray-900">
+                <div>
+                  <label htmlFor="fecha" className="block text-sm font-medium text-gray-700">
+                    Fecha
+                  </label>
+                  <input
+                    id="fecha"
+                    name="fecha"
+                    type="date"
+                    value={dataForm.fecha}
+                    onChange={handleChange}
+                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="hora" className="block text-sm font-medium text-gray-700">
+                    Hora de la cita
+                  </label>
+                  <input
+                    id="hora"
+                    name="hora"
+                    type="time"
+                    value={dataForm.hora}
+                    onChange={handleChange}
+                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="ciudad" className="block text-sm font-medium text-gray-700">
                     Ciudad
                   </label>
-                  <div className="mt-2">
-                    <select
-                      id="ciudad"
-                      name="ciudad"
-                      value={ciudad}
-                      onChange={handleChange}
-                      className="block w-full rounded-md bg-white py-1.5 pl-3 pr-8 text-base text-gray-900 outline outline-1 outline-gray-300 focus:outline-indigo-600 sm:text-sm"
-                    >
-                      <option value="">Seleccione una ciudad</option>
-                      {ciudades.map((ciudad) => (
-                        <option key={ciudad} value={ciudad}>
-                          {ciudad}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <select
+                    id="ciudad"
+                    name="ciudad"
+                    value={ciudad}
+                    onChange={handleChange}
+                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
+                  >
+                    <option value="">Seleccione una ciudad</option>
+                    {ciudades.map((city) => (
+                      <option key={city} value={city}>
+                        {city}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div className="sm:col-span-3">
-                  <label htmlFor="barrio" className="block text-sm font-medium text-gray-900">
-                    Barrio
-                  </label>
-                  <div className="mt-2">
-                    <select
-                      id="barrio"
-                      name="barrio"
-                      value={barrio}
-                      onChange={handleChange}
-                      className="block w-full rounded-md bg-white py-1.5 pl-3 pr-8 text-base text-gray-900 outline outline-1 outline-gray-300 focus:outline-indigo-600 sm:text-sm"
-                      disabled={!ciudad}
-                    >
-                      <option value="">Seleccione un barrio</option>
-                      {ciudad &&
-                        barriosPorCiudad[ciudad].map((barrio) => (
-                          <option key={barrio} value={barrio}>
-                            {barrio}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="sm:col-span-3">
-                  <label htmlFor="direccion" className="block text-sm font-medium text-gray-900">
+                <div>
+                  <label htmlFor="direccion" className="block text-sm font-medium text-gray-700">
                     Dirección
                   </label>
-                  <div className="mt-2">
-                    <input
-                      type="text"
-                      id="direccion"
-                      name="direccion"
-                      value={direccion}
-                      onChange={handleChange}
-                      className="block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline-indigo-600 sm:text-sm"
-                    />
-                  </div>
+                  <input
+                    id="direccion"
+                    name="direccion"
+                    type="text"
+                    value={direccion}
+                    onChange={handleChange}
+                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
+                  />
                 </div>
-                <div className="sm:col-span-6">
-                  <label className="block text-sm font-medium text-gray-900">
-                    Ubicación completa
+                <div className="col-span-2">
+                  <label htmlFor="descripcion" className="block text-sm font-medium text-gray-700">
+                    Descripción
                   </label>
-                  <div className="mt-1 p-1 bg-gray-100 rounded-md text-gray-900">
-                    {ubicacion || "Seleccione una ciudad y barrio, luego ingrese la dirección"}
-                  </div>
-                </div>
-              </div>
-              <div className="sm:col-span-3">
-                <label htmlFor="fecha" className="block text-sm font-medium text-gray-900">
-                  Fecha del evento
-                </label>
-                <input
-                  required
-                  value={dataForm.fecha}
-                  onChange={handleChange}
-                  id="fecha"
-                  name="fecha"
-                  type="date"
-                  className="block w-full rounded-md px-3 py-1.5 text-gray-900 outline outline-1 outline-gray-300 focus:outline-indigo-600 sm:text-sm"
-                />
-              </div>
-
-              <div className="sm:col-span-3">
-                <label htmlFor="hora" className="block text-sm font-medium text-gray-900">
-                  Hora del evento
-                </label>
-                <input
-                  required
-                  value={dataForm.hora}
-                  onChange={handleChange}
-                  id="hora"
-                  name="hora"
-                  type="time"
-                  className="block w-full rounded-md px-3 py-1.5 text-gray-900 outline outline-1 outline-gray-300 focus:outline-indigo-600 sm:text-sm"
-                />
-              </div>
-              <div className="sm:col-span-3">
-                <label htmlFor="descripcion" className="block text-sm/6 font-medium text-gray-900">
-                  Descripcion
-                </label>
-                <div className="mt-1">
                   <textarea
                     id="descripcion"
                     name="descripcion"
                     value={dataForm.descripcion}
                     onChange={handleChange}
-                    rows={1}
-                    className="block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 sm:text-sm/6"
-                  />
+                    rows={3}
+                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
+                  ></textarea>
                 </div>
               </div>
-            </div>
+              <button
+                type="submit"
+                className="w-full py-2 px-4 rounded-md bg-indigo-600 text-white text-lg font-semibold hover:bg-indigo-500 focus:outline-none"
+              >
+                {editingEvent ? "Actualizar cita" : "Crear cita"}
+              </button>
+            </form>
           </div>
-          <div className="mt-6 flex items-center justify-end gap-x-6">
-            <button
-              type="submit"
-              className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline-indigo-600"
-            >
-              {editingEvent ? "Actualizar" : "Registrar"}
-            </button>
-          </div>
-        </form>
+        </div>
+      )}
+
+      <div className="overflow-hidden bg-white shadow sm:rounded-lg">
+        <div className="flex justify-between px-4 py-5 sm:px-6">
+          <h3 className="text-lg font-medium leading-6 text-gray-900">Eventos programados</h3>
+        </div>
+        <div className="border-t border-gray-200">
+          <ul role="list" className="divide-y divide-gray-200">
+            <Events events={events} setEditingEvent={setEditingEvent} />
+          </ul>
+        </div>
       </div>
-      <Events onEditEvent={handleEditEvent } refreshEvents={refreshEvents} />
     </div>
   );
 };

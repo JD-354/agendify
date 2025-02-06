@@ -37,8 +37,8 @@ export default function Navbar() {
           <div className="flex flex-1 items-center justify-center sm:items-stretch sm:justify-start">
             <div className="flex shrink-0 items-center">
               <img
-                alt="Your Company"
-                src="https://firebasestorage.googleapis.com/v0/b/adpowereat.appspot.com/o/libros%2Flogo.png?alt=media&token=2ea22b6c-fb23-43bc-aa7a-234890b21aa5"
+                alt="Agendify"
+                src="/logo.jpeg"
                 className="h-8 w-auto"
               />
             </div>
