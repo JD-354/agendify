@@ -1,15 +1,15 @@
-import mongoose from "mongoose";
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
 
-const url:string = String(process.env.URL_BDMONGO);
+dotenv.config();
 
+const conectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI as string);
+    console.log('Conexión a la base de datos establecida');
+  } catch (error) {
+    console.error('Error al conectar a la base de datos:', error);
+  }
+};
 
-const conectDB= async() : Promise<void>=>{
- try {
-    await mongoose.connect(url);
-   return console.log("Conectado a la base de datos");
- } catch (error) {
-    console.error("error:",error);
-    process.exit(1);
- }
-}
 export default conectDB;
