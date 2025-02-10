@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
+import { FaCalendarAlt, FaClock, FaMapMarkerAlt, FaRegComment } from "react-icons/fa";
 
 interface IEvent {
   _id: string;
@@ -8,147 +9,65 @@ interface IEvent {
   hora: string;
   ubicacion: string;
   descripcion: string;
-  user: string;
+  usuario: string;
 }
 
 interface EventsProps {
   onEditEvent: (event: IEvent) => void;
+  refreshTrigger?: number;
 }
 
-const Events: React.FC<EventsProps> = ({ onEditEvent }) => {
-  const [events, setEvents] = useState<IEvent[]>([]);
-  const [updateTrigger, setUpdateTrigger] = useState(0);
-  const [notification, setNotification] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+const CACHE_KEY = 'cached_events';
+const API_URL = "https://gestioneventos-xv8m.onrender.com/api/event";
+
+const Eventos: React.FC<EventsProps> = ({ onEditEvent, refreshTrigger = 0 }) => {
+  const [eventos, setEvents] = useState<IEvent[]>(() => {
+    const cached = localStorage.getItem(CACHE_KEY);
+    return cached ? JSON.parse(cached) : [];
+  });
+  const [cargando, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notificationPermission, setNotificationPermission] = useState<boolean>(false);
+  const [editingEvent, setEditingEvent] = useState<IEvent | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const lastUpdateRef = useRef<number>(0);
 
-  const requestNotificationPermission = async () => {
-    try {
-      if (!("Notification" in window)) {
-        setError("Este navegador no soporta notificaciones");
-        return;
-      }
-
-      const permission = await Notification.requestPermission();
-      setNotificationPermission(permission === "granted");
-      
-      if (permission === "granted") {
-        setNotification("Notificaciones habilitadas correctamente");
-        setTimeout(() => setNotification(null), 10000);
-      }
-    } catch (error) {
-      console.error("Error al solicitar permisos:", error);
-      setError("Error al solicitar permisos de notificación");
-    }
+  const sortEvents = (eventsToSort: IEvent[]) => {
+    return eventsToSort.sort((a, b) => {
+      const dateA = new Date(`${a.fecha}T${a.hora}`);
+      const dateB = new Date(`${b.fecha}T${b.hora}`);
+      return dateA.getTime() - dateB.getTime();
+    });
   };
 
-  const showNotification = (title: string, body: string) => {
-    if (Notification.permission === "granted") {
-      const options = {
-        body,
-        icon: "/favicon.ico",
-        badge: "/favicon.ico",
-        vibrate: [200, 100, 200],
-        requireInteraction: true
-      };
-
-      try {
-        const notification = new Notification(title, options);
-        
-        notification.onclick = () => {
-          window.focus();
-          notification.close();
-        };
-      } catch (error) {
-        console.error("Error al mostrar notificación:", error);
-      }
-    }
-  };
-
-  const formatDateTime = (dateStr: string, timeStr: string): Date => {
-    try {
-      const [year, month, day] = dateStr.split('-').map(num => parseInt(num));
-      const [hours, minutes] = timeStr.split(':').map(num => parseInt(num));
-      return new Date(year, month - 1, day, hours, minutes);
-    } catch (error) {
-      console.error("Error al formatear fecha:", error);
-      return new Date();
-    }
-  };
-
-  const getEvents = useCallback(async () => {
+  const getEvents = useCallback(async (forceFetch: boolean = false) => {
     const token = localStorage.getItem("token");
     if (!token) {
       setError("No hay token disponible");
-      setLoading(false);
       return;
     }
+    if (!forceFetch && Date.now() - lastUpdateRef.current < 1000) {
+      return;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
 
     try {
       setLoading(true);
-      setError(null);
-      
       const config = {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        signal: abortControllerRef.current.signal
       };
-
-      const response = await axios.get<IEvent[]>(
-        "https://gestioneventos-xv8m.onrender.com/api/event",
-        config
-      );
-
-      if (response.data) {
-        const validEvents = response.data.filter(event => {
-          try {
-            const eventDate = formatDateTime(event.fecha, event.hora);
-            return !isNaN(eventDate.getTime());
-          } catch {
-            return false;
-          }
-        });
-
-        const sortedEvents = validEvents.sort((a, b) => {
-          const dateA = formatDateTime(a.fecha, a.hora);
-          const dateB = formatDateTime(b.fecha, b.hora);
-          return dateA.getTime() - dateB.getTime();
-        });
-
+      const respuesta = await axios.get<IEvent[]>(API_URL, config);
+      if (respuesta.data) {
+        const sortedEvents = sortEvents(respuesta.data);
         setEvents(sortedEvents);
-        
-        // Programar notificaciones para cada evento
-        sortedEvents.forEach(event => {
-          const eventTime = formatDateTime(event.fecha, event.hora);
-          const now = new Date();
-          
-          if (eventTime > now) {
-            const timeUntilEvent = eventTime.getTime() - now.getTime();
-            
-            // Notificación 15 minutos antes
-            const timeFor15MinNotification = timeUntilEvent - (15 * 60 * 1000);
-            if (timeFor15MinNotification > 0) {
-              setTimeout(() => {
-                showNotification(
-                  "Recordatorio de Evento",
-                  `El evento "${event.nameEvent}" comenzará en 15 minutos en ${event.ubicacion}`
-                );
-              }, timeFor15MinNotification);
-            }
-
-            // Notificación al inicio del evento
-            setTimeout(() => {
-              showNotification(
-                "¡Evento Iniciando!",
-                `El evento "${event.nameEvent}" está comenzando ahora en ${event.ubicacion}`
-              );
-            }, timeUntilEvent);
-          }
-        });
+        localStorage.setItem(CACHE_KEY, JSON.stringify(sortedEvents));
+        lastUpdateRef.current = Date.now();
       }
     } catch (error: any) {
+      if (error.name === 'CanceledError') return;
       const errorMessage = error.response?.data?.message || "Error al obtener eventos";
       setError(errorMessage);
       if (error.response?.status === 401) {
@@ -166,60 +85,73 @@ const Events: React.FC<EventsProps> = ({ onEditEvent }) => {
       setError("No hay token disponible");
       return;
     }
-
     try {
       const config = {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
       };
-
-      const response = await axios.delete(
-        `https://gestioneventos-xv8m.onrender.com/api/event/${id}`,
-        config
-      );
-
-      if (response.data) {
-        setNotification("Evento eliminado exitosamente");
-        setTimeout(() => setNotification(null), 3000);
-        setUpdateTrigger(prev => prev + 1);
-      }
+      await axios.delete(`${API_URL}/${id}`, config);
+      const updatedEvents = eventos.filter(event => event._id !== id);
+      setEvents(updatedEvents);
+      localStorage.setItem(CACHE_KEY, JSON.stringify(updatedEvents));
+      setError("Cita eliminada exitosamente");
+      setTimeout(() => setError(null), 3000);
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || "Error al eliminar el evento";
+      const errorMessage = error.response?.data?.message || "Error al eliminar la cita";
       setError(errorMessage);
-      if (error.response?.status === 401) {
-        localStorage.removeItem("token");
-        window.location.href = "/";
-      }
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const handleEditSubmit = async (updatedEvent: IEvent) => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setError("No hay token disponible");
+      return;
+    }
+    try {
+      const config = {
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+      };
+      const response = await axios.put(`${API_URL}/${updatedEvent._id}`, updatedEvent, config);
+      const updatedEvents = eventos.map(event => event._id === updatedEvent._id ? response.data : event);
+      setEvents(updatedEvents);
+      localStorage.setItem(CACHE_KEY, JSON.stringify(updatedEvents));
+      setError("Cita actualizada exitosamente");
+      setTimeout(() => setError(null), 3000);
+      setEditingEvent(null);
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || "Error al actualizar la cita";
+      setError(errorMessage);
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (editingEvent) {
+      setEditingEvent({ ...editingEvent, [e.target.name]: e.target.value });
     }
   };
 
   useEffect(() => {
-    requestNotificationPermission();
-  }, []);
+    getEvents(true);
+    const interval = setInterval(() => {
+      getEvents(false);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [eventos, getEvents]);
 
   useEffect(() => {
-    getEvents();
-    
-    // Actualizar eventos cada minuto
-    const interval = setInterval(getEvents, 60000);
-    return () => clearInterval(interval);
-  }, [getEvents, updateTrigger]);
+    if (refreshTrigger > 0) {
+      getEvents(true);
+    }
+  }, [refreshTrigger, getEvents]);
 
   const formatDate = (dateString: string): string => {
     try {
       const [year, month, day] = dateString.split('-').map(num => parseInt(num));
       const date = new Date(year, month - 1, day);
-      
-      return new Intl.DateTimeFormat('es-ES', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      }).format(date);
-    } catch (error) {
-      return "Fecha no disponible";
-    }
+      return new Intl.DateTimeFormat('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }).format(date);
+    } catch { return "Fecha no disponible"; }
   };
 
   const formatTime = (timeString: string): string => {
@@ -227,133 +159,110 @@ const Events: React.FC<EventsProps> = ({ onEditEvent }) => {
       const [hours, minutes] = timeString.split(':').map(num => parseInt(num));
       const date = new Date();
       date.setHours(hours, minutes);
-      
-      return new Intl.DateTimeFormat('es-ES', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      }).format(date);
-    } catch (error) {
-      return timeString;
-    }
+      return new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }).format(date);
+    } catch { return timeString; }
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-      </div>
-    );
-  }
-
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div className="min-h-screen">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {!notificationPermission && (
-          <div className="bg-yellow-100 border-l-4 border-yellow-500 p-4 mb-4">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-yellow-500" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
+        {error && (
+          <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-md shadow-md mb-4 transition-opacity duration-300 opacity-100">
+            <p>{error}</p>
+          </div>
+        )}
+        <div className="flex items-center justify-center mb-6">
+          <FaCalendarAlt className="text-3xl text-blue-600 mr-2" />
+          <h2 className="text-3xl font-bold text-center text-teal-500">Citas Programados</h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {eventos.map((evento) => (
+            <div key={evento._id} className="bg-white rounded-xl shadow-lg p-6 transition-all transform hover:scale-105 hover:shadow-xl hover:shadow-blue-500/30">
+              <h3 className="font-semibold text-xl mb-2 text-blue-600">{evento.nameEvent}</h3>
+              <div className="flex items-center mb-2">
+                <FaCalendarAlt className="text-gray-500 mr-2" />
+                <p className="text-sm text-gray-500">{formatDate(evento.fecha)}</p>
               </div>
-              <div className="ml-3">
-                <p className="text-sm text-yellow-700">
-                  Para recibir notificaciones de eventos, necesitas habilitar los permisos.
-                </p>
-                <button 
-                  onClick={requestNotificationPermission}
-                  className="mt-2 px-4 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-colors"
-                >
-                  Habilitar Notificaciones
+              <div className="flex items-center mb-2">
+                <FaClock className="text-gray-500 mr-2" />
+                <p className="text-sm text-gray-500">{formatTime(evento.hora)}</p>
+              </div>
+              <div className="flex items-center mb-2">
+                <FaMapMarkerAlt className="text-gray-500 mr-2" />
+                <p className="text-sm text-gray-500">{evento.ubicacion}</p>
+              </div>
+              <div className="flex items-center mb-2">
+                <FaRegComment className="text-gray-500 mr-2" />
+                <p className="text-sm text-gray-500">{evento.descripcion}</p>
+              </div>
+              <div className="flex justify-between mt-4">
+                <button onClick={() => setEditingEvent(evento)} className="px-5 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                  Editar
+                </button>
+                <button onClick={() => deleteEvent(evento._id)} className="px-5 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">
+                  Eliminar
                 </button>
               </div>
             </div>
-          </div>
-        )}
-
-        <div className="flex justify-between items-center mb-8">
-          <h2 className="text-2xl font-bold text-gray-900">Eventos</h2>
+          ))}
         </div>
-
-        {error && (
-          <div className="bg-red-100 border-l-4 border-red-500 p-4 mb-4">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {notification && (
-          <div className="bg-green-100 border-l-4 border-green-500 p-4 mb-4">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-green-700">{notification}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {events.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-gray-500">No hay eventos programados</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {events.map((event) => (
-              <div 
-                key={event._id} 
-                className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300"
-              >
-                <div className="bg-indigo-600 px-4 py-3">
-                  <h3 className="text-lg font-semibold text-white truncate">
-                    {event.nameEvent}
-                  </h3>
-                </div>
-                
-                <div className="p-4 space-y-3">
-                  <p className="text-gray-600">
-                    <span className="font-medium">Ubicación:</span> {event.ubicacion}
-                  </p>
-                  <p className="text-gray-600">
-                    <span className="font-medium">Fecha:</span> {formatDate(event.fecha)}
-                  </p>
-                  <p className="text-gray-600">
-                    <span className="font-medium">Hora:</span> {formatTime(event.hora)}
-                  </p>
-                  <p className="text-gray-600">
-                    <span className="font-medium">Descripción:</span> {event.descripcion}
-                  </p>
-                </div>
-
-                <div className="px-4 py-3 bg-gray-50 flex justify-end gap-3">
-                  <button
-                    className="px-4 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-500 transition-colors duration-200"
-                    onClick={() => onEditEvent(event)}
-                  >
-                    Editar
+        {editingEvent && (
+          <div className="fixed inset-0 flex justify-center items-center bg-blue-500/50">
+            <div className="bg-white p-8 rounded-lg shadow-xl w-96 relative">
+              <h3 className="text-2xl font-semibold mb-4 text-cyan-700">Editar cita</h3>
+              <form onSubmit={(e) => { e.preventDefault(); if (editingEvent) handleEditSubmit(editingEvent); }}>
+                <input
+                  type="text"
+                  name="nameEvent"
+                  value={editingEvent.nameEvent}
+                  onChange={handleEditChange}
+                  className="w-full mb-4 p-3 border border-cyan-200 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="Nombre del evento"
+                />
+                <input
+                  type="date"
+                  name="fecha"
+                  value={editingEvent.fecha}
+                  onChange={handleEditChange}
+                  className="w-full mb-4 p-3 border border-cyan-200 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+                <input
+                  type="time"
+                  name="hora"
+                  value={editingEvent.hora}
+                  onChange={handleEditChange}
+                  className="w-full mb-4 p-3 border border-cyan-200 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+                <input
+                  type="text"
+                  name="ubicacion"
+                  value={editingEvent.ubicacion}
+                  onChange={handleEditChange}
+                  className="w-full mb-4 p-3 border border-cyan-200 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="Ubicación"
+                />
+                <textarea
+                  name="descripcion"
+                  value={editingEvent.descripcion}
+                  onChange={handleEditChange}
+                  className="w-full mb-4 p-3 border border-cyan-200 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  rows={4}
+                  placeholder="Descripción del evento"
+                />
+                <div className="flex justify-between">
+                  <button type="submit" className="px-6 py-2 bg-cyan-600 text-white rounded-md hover:bg-cyan-700 transition-colors duration-200">
+                    Guardar
                   </button>
                   <button
-                    className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-500 transition-colors duration-200"
-                    onClick={() => deleteEvent(event._id)}
+                    type="button"
+                    onClick={() => setEditingEvent(null)}
+                    className="px-6 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors duration-200 border border-gray-300"
                   >
-                    Eliminar
+                    Cancelar
                   </button>
                 </div>
-              </div>
-            ))}
+              </form>
+            </div>
           </div>
         )}
       </div>
@@ -361,4 +270,4 @@ const Events: React.FC<EventsProps> = ({ onEditEvent }) => {
   );
 };
 
-export default Events;
+export default Eventos;
