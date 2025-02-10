@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Events from "../components/Events";
+import { FaHospital } from "react-icons/fa"; // Importar el ícono adecuado
 
 interface IEvent {
   _id: string;
@@ -28,9 +29,8 @@ const Principal: React.FC = () => {
     descripcion: "",
   });
   const [showEventForm, setShowEventForm] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showFilter, setShowFilter] = useState(false);
   const [events, setEvents] = useState<IEvent[]>([]);
+  const [welcomeMessage, setWelcomeMessage] = useState("¡Bienvenidos a Agendify!");
   const modalRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -45,6 +45,14 @@ const Principal: React.FC = () => {
     const randomIndex = Math.floor(Math.random() * backgrounds.length);
     document.body.style.backgroundImage = backgrounds[randomIndex];
   };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setWelcomeMessage("Aquí puedes agregar tus citas médicas");
+    }, 9000);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -65,16 +73,15 @@ const Principal: React.FC = () => {
     const handleClickOutside = (event: MouseEvent) => {
       if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
         setShowEventForm(false);
-        setShowFilter(false);
       }
     };
-    if (showEventForm || showFilter) {
+    if (showEventForm) {
       document.addEventListener("mousedown", handleClickOutside);
     }
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [showEventForm, showFilter]);
+  }, [showEventForm]);
 
   useEffect(() => {
     if (ciudad || direccion) {
@@ -127,7 +134,7 @@ const Principal: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent | Event) => {
     e.preventDefault();
     if (!dataForm.nameEvent || !dataForm.fecha || !dataForm.hora || !dataForm.ubicacion || !dataForm.descripcion) {
-      return;  // Si no hay datos completos, no hacemos nada.
+      return;
     }
     try {
       const config = {
@@ -141,17 +148,15 @@ const Principal: React.FC = () => {
         await axios.put(`https://gestioneventos-xv8m.onrender.com/api/event/${editingEvent._id}`, dataToSend, config);
       } else {
         const response = await axios.post("https://gestioneventos-xv8m.onrender.com/api/event", dataToSend, config);
-        // Actualizar la lista de eventos añadiendo el nuevo evento
         setEvents(prevEvents => [...prevEvents, response.data]);
       }
-      resetForm(); // Restablecer los campos del formulario después de crear la cita
+      resetForm();
     } catch (error) {
       console.error("Error al enviar el formulario:", error);
     }
   };
 
   const handleCreateEvent = () => {
-    // Resetear el formulario a valores vacíos
     setDataForm({
       nameEvent: "",
       fecha: "",
@@ -161,76 +166,33 @@ const Principal: React.FC = () => {
     });
     setCiudad("");
     setDireccion("");
-    setShowEventForm(true); // Mostrar la tarjeta del formulario
+    setShowEventForm(true);
   };
-
-  // ... (rest of the component remains the same)
 
   return (
     <div className="flex min-h-full flex-1 flex-col justify-center px-6 py-5 lg:px-8">
-      <div className="flex gap-4">
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Buscar eventos..."
-          className="rounded-md border-gray-300 p-2"
-        />
+      <div className="flex flex-col items-center gap-6 mb-8 bg-teal-200">
+        <h1 className="text-3xl font-bold text-blue-600 transition-opacity duration-500">
+          {welcomeMessage}
+        </h1>
         <button
           onClick={handleCreateEvent}
-          className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline-indigo-600"
+          className="rounded-md bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline-indigo-600"
         >
           Añadir evento
         </button>
-        <button
-          onClick={() => setShowFilter(!showFilter)}
-          className="rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500"
-        >
-          Filtrar
-        </button>
       </div>
-      {showFilter && (
-        <div className="fixed inset-0 z-10 flex items-center justify-center">
-          <div ref={modalRef} className="bg-gray-50 p-8 rounded-xl shadow-lg w-[350px]">
-            <h3 className="text-center text-xl font-semibold">Filtros</h3>
-            <div>
-              <label>Fecha</label>
-              <input
-                type="date"
-                className="block w-full mt-2 mb-4"
-                onChange={(e) => setDataForm(prev => ({ ...prev, fecha: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label>Ciudad</label>
-              <select
-                value={ciudad}
-                onChange={handleChange}
-                name="ciudad"
-                className="block w-full mt-2 mb-4"
-              >
-                <option value="">Seleccione una ciudad</option>
-                {ciudades.map((ciudad) => (
-                  <option key={ciudad} value={ciudad}>
-                    {ciudad}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showEventForm && (
         <div className="fixed inset-0 z-10 flex items-center justify-center">
-          <div ref={modalRef} className="bg-gray-50 p-8 rounded-xl shadow-lg w-[450px]">
+          <div ref={modalRef} className="bg-blue-300 p-8 rounded-xl shadow-lg w-[450px]">
             <form className="space-y-3" onSubmit={handleSubmit}>
-              <h2 className="text-center text-xl font-bold tracking-tight text-gray-900 mb-4">
+              <h2 className="text-center text-xl font-bold tracking-tight text-white mb-4">
                 {editingEvent ? "Editar cita médica " : "Registrar cita médica"}
               </h2>
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <label htmlFor="nameEvent" className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="nameEvent" className="block text-sm font-medium text-white">
                     Nombre del Hospital
                   </label>
                   <input
@@ -239,11 +201,11 @@ const Principal: React.FC = () => {
                     type="text"
                     value={dataForm.nameEvent}
                     onChange={handleChange}
-                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
+                    className="mt-1 block w-full rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
                   />
                 </div>
                 <div>
-                  <label htmlFor="fecha" className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="fecha" className="block text-sm font-medium text-white">
                     Fecha
                   </label>
                   <input
@@ -252,11 +214,11 @@ const Principal: React.FC = () => {
                     type="date"
                     value={dataForm.fecha}
                     onChange={handleChange}
-                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
+                    className="mt-1 block w-full rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
                   />
                 </div>
                 <div>
-                  <label htmlFor="hora" className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="hora" className="block text-sm font-medium text-white">
                     Hora de la cita
                   </label>
                   <input
@@ -265,11 +227,11 @@ const Principal: React.FC = () => {
                     type="time"
                     value={dataForm.hora}
                     onChange={handleChange}
-                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
+                    className="mt-1 block w-full rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
                   />
                 </div>
                 <div>
-                  <label htmlFor="ciudad" className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="ciudad" className="block text-sm font-medium text-white">
                     Ciudad
                   </label>
                   <select
@@ -277,7 +239,7 @@ const Principal: React.FC = () => {
                     name="ciudad"
                     value={ciudad}
                     onChange={handleChange}
-                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
+                    className="mt-1 block w-full rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
                   >
                     <option value="">Seleccione una ciudad</option>
                     {ciudades.map((city) => (
@@ -288,7 +250,7 @@ const Principal: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="direccion" className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="direccion" className="block text-sm font-medium text-white">
                     Dirección
                   </label>
                   <input
@@ -297,11 +259,11 @@ const Principal: React.FC = () => {
                     type="text"
                     value={direccion}
                     onChange={handleChange}
-                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
+                    className="mt-1 block w-full rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
                   />
                 </div>
                 <div className="col-span-2">
-                  <label htmlFor="descripcion" className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="descripcion" className="block text-sm font-medium text-white">
                     Descripción
                   </label>
                   <textarea
@@ -310,13 +272,13 @@ const Principal: React.FC = () => {
                     value={dataForm.descripcion}
                     onChange={handleChange}
                     rows={3}
-                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
+                    className="mt-1 block w-full rounded-md border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50"
                   ></textarea>
                 </div>
               </div>
               <button
                 type="submit"
-                className="w-full py-2 px-4 rounded-md bg-indigo-600 text-white text-lg font-semibold hover:bg-indigo-500 focus:outline-none"
+                className="w-full py-2 px-4 rounded-md bg-blue-600 text-white text-lg font-semibold hover:bg-blue-500 focus:outline-none"
               >
                 {editingEvent ? "Actualizar cita" : "Crear cita"}
               </button>
@@ -325,9 +287,11 @@ const Principal: React.FC = () => {
         </div>
       )}
 
-      <div className="overflow-hidden bg-white shadow sm:rounded-lg">
+      <div className="overflow-hidden bg-white shadow sm:rounded-lg mt-6">
         <div className="flex justify-between px-4 py-5 sm:px-6">
-          <h3 className="text-lg font-medium leading-6 text-gray-900">Eventos programados</h3>
+          <h3 className="text-lg font-medium leading-6 text-gray-900 flex items-center justify-center text-blue-600">
+            <FaHospital className="mr-2 text-teal-400" /> Eventos clínicos
+          </h3>
         </div>
         <div className="border-t border-gray-200">
           <ul role="list" className="divide-y divide-gray-200">
